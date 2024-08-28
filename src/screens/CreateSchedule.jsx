@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View, Button, Text, Platform, Alert, Modal, StyleSheet, ImageBackground, Image, Pressable,
   TextInput,
@@ -6,41 +6,139 @@ import {
   ScrollView,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
-const { width, height } = Dimensions.get('window')
+import Header from './Header';
+import PushNotification from "react-native-push-notification";
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import sqlite from 'react-native-sqlite-storage';
+
+const { width, height } = Dimensions.get('window');
 
 const CreateSchedule = ({ navigation }) => {
-  const [selectedday, setSelectedDay] = useState('select day');
+  const [selectedday, setSelectedDay] = useState('Sunday');
   const [modalVisible, setModalVisible] = useState(false);
-  const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const [time, setTime] = useState(new Date());
   const [showTimePicker, setShowTimePicker] = useState(false);
+  const [selectedlanguage, setSelectedLanguage] = useState('english');
+  const languages = ['urdu','arabic'];
+  const [modal, setModal] = useState(false);
+  const [selectedtopic, setSelectedTopic] = useState('topic');
+  const [topicmodal, setTopicModal] = useState(false);
+  const [ayattopiclist, setAyatTopicList] = useState([]);
+  const [selectedtopicid, setSelectedTopicId] = useState(0);
   const onTimeChange = (event, selectedTime) => {
     const currentTime = selectedTime || time;
     setShowTimePicker(Platform.OS === 'ios');
     setTime(currentTime);
   };
-  const scheduleReminder = () => {
+
+  useEffect(() => {
+    getAyatTopics();
+    checkAndCreateChannel();
+  }, []);
+
+  const checkAndCreateChannel = async () => {
+    const channelCreated = await AsyncStorage.getItem('channelCreated');
+    if (!channelCreated) {
+      PushNotification.createChannel(
+        {
+          channelId: "ayat-channel",
+          channelName: "Ayat Notifications",
+          channelDescription: "A channel to send Ayat notifications",
+          importance: 4,
+          vibrate: true,
+          playSound: true,
+          soundName: 'default',
+        },
+        (created) => {
+          if (created) {
+            AsyncStorage.setItem('channelCreated', 'true');
+            console.log('Notification channel created');
+          }
+        }
+      );
+    }
+  };
+
+  const scheduleReminder = async () => {
+    let db = await sqlite.openDatabase({ name: 'demo.db' });
+
+    const dayIndex = days.indexOf(selectedday);
     const now = new Date();
     const reminderDate = new Date(now);
 
-    reminderDate.setDate(now.getDate() + ((days.indexOf(selectedday) + 7 - now.getDay()) % 7));
+    // Set the time for the reminder
     reminderDate.setHours(time.getHours());
     reminderDate.setMinutes(time.getMinutes());
     reminderDate.setSeconds(0);
 
-    if (reminderDate < now) {
-      reminderDate.setDate(reminderDate.getDate() + 7);
+    // Calculate the number of days until the next occurrence of the selected day
+   /* const daysUntilReminder = (dayIndex + 7 - now.getDay()) % 7;
+
+    // Set the reminder date to the next occurrence of the selected day
+    if (daysUntilReminder === 0 && reminderDate < now) {
+        // If today is the selected day but the time has already passed, schedule it for next week
+        reminderDate.setDate(reminderDate.getDate() + 7);
+    } else {
+        reminderDate.setDate(reminderDate.getDate() + daysUntilReminder);
     }
 
-    /*PushNotification.localNotificationSchedule({
-      message: `Reminder for ${selectedDay}`,
+    */
+    // Schedule the notification
+    PushNotification.localNotificationSchedule({
+      channelId: "ayat-channel",
+      message: `${selectedday}`,
       date: reminderDate,
+      allowWhileIdle: true,
+      title:selectedtopic,
+      repeatType: 'week', // Repeat every week
+      data: {
+        topicid: selectedtopicid,
+        day: selectedday,
+       // language: selectedlanguage,
+      }
+    });
+
+    // Save the schedule into the SQLite database
+/*    db.transaction(tx => {
+      tx.executeSql(
+        'INSERT INTO myschedule (Topic, Day, Language, Time) VALUES (?, ?, ?, ?)',
+        [selectedtopic, selectedday, selectedlanguage, time.toLocaleTimeString()],
+        (tx, results) => {
+          console.log('Schedule saved successfully');
+        },
+        error => {
+          console.log('Error saving schedule: ', error);
+        }
+      );
     });*/
 
-    Alert.alert('Reminder Scheduled', `Reminder set for ${selectedday} at ${time.toLocaleTimeString()}`);
+    Alert.alert(`Reminder set for ${selectedday} at ${time.toLocaleTimeString()} and will repeat weekly.`);
   };
+
+  async function getAyatTopics() {
+    let db = await sqlite.openDatabase({ name: 'demo.db' });
+    db.transaction(function (t) {
+      t.executeSql(
+        'select * from Topic',
+        [],
+        (tx, resultSet) => {
+          let topics = [];
+          for (let i = 0; i < resultSet.rows.length; i++) {
+            topics.push(resultSet.rows.item(i));
+          }
+          setAyatTopicList(topics); // Update state using setter function
+        },
+        e => {
+          console.log(JSON.stringify(e));
+        },
+      );
+    });
+  }
+
   return (
     <ImageBackground source={require('../assets/CloudsBackground.png')} style={styles.bgImage}>
+      <Header navigation={navigation} />
       <Text style={styles.heading}>Create Ayat Schedule</Text>
       <View style={styles.view}>
         <Text style={styles.text}>Select Time</Text>
@@ -76,25 +174,84 @@ const CreateSchedule = ({ navigation }) => {
 
       <Modal animationType="slide" transparent={true} visible={modalVisible}>
         <View style={styles.centeredView}>
-
           <View style={styles.modalView}>
             <ScrollView>
-              <Pressable>
-                {days.map((item, index) => (
-                  <Pressable
-                    key={index}
-                    onPress={() => [
-                      setModalVisible(false),
-                      setSelectedDay(item),
-                    ]}>
-                    <Text style={styles.modalText}>{item}</Text>
-                  </Pressable>
-                ))}
-              </Pressable>
+              {days.map((item, index) => (
+                <Pressable
+                  key={index}
+                  onPress={() => [
+                    setModalVisible(false),
+                    setSelectedDay(item),
+                  ]}>
+                  <Text style={styles.modalText}>{item}</Text>
+                </Pressable>
+              ))}
             </ScrollView>
           </View>
         </View>
       </Modal>
+
+      <View style={styles.view}>
+        <Text style={styles.text}>Select Topic</Text>
+        <Pressable style={styles.press2} onPress={() => setTopicModal(true)}>
+          <Text style={{fontSize: width * 0.05, color: 'black',textAlign:'justify'}}>{selectedtopic}</Text>
+          <Image
+            source={require('../assets/down.png')}
+            style={{ width: width * 0.1, height: width * 0.1 }}
+          />
+        </Pressable>
+      </View>
+
+      <Modal animationType="slide" transparent={true} visible={topicmodal}>
+        <View style={styles.centeredView}>
+          <View style={styles.modalView}>
+            <ScrollView>
+              {ayattopiclist.map((item, index) => (
+                <Pressable
+                  key={index}
+                  onPress={() => {
+                    setTopicModal(false);
+                    setSelectedTopic(item.etopic);
+                    setSelectedTopicId(item.id)
+                  }}>
+                  <Text style={styles.modalText}>{item.etopic}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+   { /*  <View style={styles.view}>
+        <Text style={styles.text}>Select Language</Text>
+        <Pressable style={styles.press2} onPress={() => setModal(true)}>
+          <Text style={{ fontSize: width * 0.05, color: 'black' }}>{selectedlanguage}</Text>
+          <Image
+            source={require('../assets/down.png')}
+            style={{ width: width * 0.1, height: width * 0.1 }}
+          />
+        </Pressable>
+      </View>
+      <Modal animationType="slide" transparent={true} visible={modal}>
+        <View style={styles.centeredView}>
+          <View style={[styles.modalView,{height:'30'}]}>
+            <ScrollView>
+            {languages.map((item, index) => (
+                <Pressable
+                  key={index}
+                  onPress={() => [
+                    setModal(false),
+                    setSelectedLanguage(item),
+                  ]}>
+                  <Text style={styles.modalText}>{item}</Text>
+                </Pressable>
+              ))}
+              
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+      */}
       <Pressable style={styles.send} onPress={scheduleReminder}>
         <Text style={styles.sendText}>Set Schedule</Text>
       </Pressable>
@@ -102,8 +259,9 @@ const CreateSchedule = ({ navigation }) => {
         <Text style={styles.backButtonText}>Back</Text>
       </Pressable>
     </ImageBackground>
-  )
+  );
 }
+
 const styles = StyleSheet.create({
   bgImage: {
     flex: 1,
@@ -122,15 +280,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     paddingHorizontal: width * 0.05,
     justifyContent: 'space-between',
-    marginBottom: height * 0.01,
+    marginBottom: height * 0.02,
     //backgroundColor:'red',
-    marginTop: height * 0.03
+    //marginTop: height * 0.03
   },
   text: {
     fontSize: width * 0.06,
     fontWeight: '600',
     color: 'black',
-
+    width: '50%'
   },
   input: {
     backgroundColor: 'white',
@@ -152,7 +310,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: width * 0.03,
     backgroundColor: 'white',
-    height: '100%'
+    //height: '100%'
   },
   centeredView: {
     flex: 1,
@@ -217,4 +375,4 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
 })
-export default CreateSchedule
+export default CreateSchedule;

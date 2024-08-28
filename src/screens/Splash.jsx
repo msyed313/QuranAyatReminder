@@ -1,8 +1,10 @@
 import { View, Text, ImageBackground, StyleSheet, Image, Dimensions, useAnimatedValue, Animated, StatusBar } from 'react-native'
-import React,{useEffect,useRef} from 'react'
+import React,{useEffect,useRef,useState} from 'react'
 const { width, height } = Dimensions.get('window')
+import AsyncStorage from '@react-native-async-storage/async-storage'
 const Splash = ({navigation}) => {
     const anim = useRef(new Animated.Value(0)).current;
+    const [data, setData] = useState({});
     const animation = () => {
         Animated.timing(anim, {
             toValue: 1,
@@ -10,14 +12,32 @@ const Splash = ({navigation}) => {
             useNativeDriver: true,
         }).start(() => {
             const timer = setTimeout(() => {
-                navigation.navigate('main');
+                if(data){
+                     navigation.navigate('main')
+                }
+                else{
+                    navigation.navigate('login');
+                }
+                
             }, 1000);
 
             return () => clearTimeout(timer);
         });
     }
+    const retrieveData = async () => {
+        try {
+          const value = await AsyncStorage.getItem('user');
+          if (value !== null) {
+            const parsedData = JSON.parse(value);
+            //console.log(parsedData);
+            setData(parsedData);
+          }
+        } catch (error) {
+          console.error('Error retrieving data:', error);
+        }
+      };
     useEffect(() => {
-
+        retrieveData(),
         animation()
     }, []);
     return (

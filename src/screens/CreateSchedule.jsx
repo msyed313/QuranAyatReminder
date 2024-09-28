@@ -19,13 +19,24 @@ const CreateSchedule = ({ navigation }) => {
   const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const [time, setTime] = useState(new Date());
   const [showTimePicker, setShowTimePicker] = useState(false);
-  const [selectedlanguage, setSelectedLanguage] = useState('english');
-  const languages = ['urdu','arabic'];
-  const [modal, setModal] = useState(false);
   const [selectedtopic, setSelectedTopic] = useState('topic');
   const [topicmodal, setTopicModal] = useState(false);
   const [ayattopiclist, setAyatTopicList] = useState([]);
   const [selectedtopicid, setSelectedTopicId] = useState(0);
+  const [modal, setModal] = useState(false);
+  const [selectedlanguage, setSelectedLanguage] = useState('English');
+  const [selectedtable, setSelectedTable] = useState('Translation');
+  const [repeatType, setRepeatType] = useState(null)
+  const languages = [
+    {
+      lang: 'Urdu',
+      t_nam: 'quran_urdu'
+    },
+    {
+      lang: 'Arabic',
+      t_nam: 'Quran'
+    }
+  ];
   const onTimeChange = (event, selectedTime) => {
     const currentTime = selectedTime || time;
     setShowTimePicker(Platform.OS === 'ios');
@@ -73,54 +84,59 @@ const CreateSchedule = ({ navigation }) => {
     reminderDate.setSeconds(0);
 
     // Calculate the number of days until the next occurrence of the selected day
-   /* const daysUntilReminder = (dayIndex + 7 - now.getDay()) % 7;
-
-    // Set the reminder date to the next occurrence of the selected day
-    if (daysUntilReminder === 0 && reminderDate < now) {
-        // If today is the selected day but the time has already passed, schedule it for next week
-        reminderDate.setDate(reminderDate.getDate() + 7);
-    } else {
-        reminderDate.setDate(reminderDate.getDate() + daysUntilReminder);
-    }
-
-    */
+    /* const daysUntilReminder = (dayIndex + 7 - now.getDay()) % 7;
+ 
+     // Set the reminder date to the next occurrence of the selected day
+     if (daysUntilReminder === 0 && reminderDate < now) {
+         // If today is the selected day but the time has already passed, schedule it for next week
+         reminderDate.setDate(reminderDate.getDate() + 7);
+     } else {
+         reminderDate.setDate(reminderDate.getDate() + daysUntilReminder);
+     }
+ 
+     */
     // Schedule the notification
     PushNotification.localNotificationSchedule({
       channelId: "ayat-channel",
       message: `${selectedday}`,
       date: reminderDate,
       allowWhileIdle: true,
-      title:selectedtopic,
-      repeatType: 'week', // Repeat every week
+      title: selectedtopic,
+      repeatType: repeatType, 
+      //number:selectedlanguage,// Repeat every week
       data: {
         topicid: selectedtopicid,
         day: selectedday,
-       // language: selectedlanguage,
+        language: selectedtable,
       }
     });
 
     // Save the schedule into the SQLite database
-/*    db.transaction(tx => {
-      tx.executeSql(
-        'INSERT INTO myschedule (Topic, Day, Language, Time) VALUES (?, ?, ?, ?)',
-        [selectedtopic, selectedday, selectedlanguage, time.toLocaleTimeString()],
-        (tx, results) => {
-          console.log('Schedule saved successfully');
-        },
-        error => {
-          console.log('Error saving schedule: ', error);
-        }
-      );
-    });*/
+    /*    db.transaction(tx => {
+          tx.executeSql(
+            'INSERT INTO myschedule (Topic, Day, Language, Time) VALUES (?, ?, ?, ?)',
+            [selectedtopic, selectedday, selectedlanguage, time.toLocaleTimeString()],
+            (tx, results) => {
+              console.log('Schedule saved successfully');
+            },
+            error => {
+              console.log('Error saving schedule: ', error);
+            }
+          );
+        });*/
 
-    Alert.alert(`Reminder set for ${selectedday} at ${time.toLocaleTimeString()} and will repeat weekly.`);
+    Alert.alert(`Reminder set for ${selectedday} at ${time.toLocaleTimeString()} and will repeat ${repeatType}.`);
   };
 
   async function getAyatTopics() {
-    let db = await sqlite.openDatabase({ name: 'demo.db' });
+    let db = await sqlite.openDatabase({
+      name: 'CompleteQuran.db',
+      location: 'default',
+      createFromLocation: '~CompleteQuran.db'
+    });
     db.transaction(function (t) {
       t.executeSql(
-        'select * from Topic',
+        'SELECT * FROM Topic ORDER BY LOWER(topicName) ASC',
         [],
         (tx, resultSet) => {
           let topics = [];
@@ -194,7 +210,7 @@ const CreateSchedule = ({ navigation }) => {
       <View style={styles.view}>
         <Text style={styles.text}>Select Topic</Text>
         <Pressable style={styles.press2} onPress={() => setTopicModal(true)}>
-          <Text style={{fontSize: width * 0.05, color: 'black',textAlign:'justify'}}>{selectedtopic}</Text>
+          <Text style={{ fontSize: width * 0.05, color: 'black', textAlign: 'justify' }}>{selectedtopic}</Text>
           <Image
             source={require('../assets/down.png')}
             style={{ width: width * 0.1, height: width * 0.1 }}
@@ -211,10 +227,10 @@ const CreateSchedule = ({ navigation }) => {
                   key={index}
                   onPress={() => {
                     setTopicModal(false);
-                    setSelectedTopic(item.etopic);
-                    setSelectedTopicId(item.id)
+                    setSelectedTopic(item.topicName);
+                    setSelectedTopicId(item.topicId)
                   }}>
-                  <Text style={styles.modalText}>{item.etopic}</Text>
+                  <Text style={styles.modalText}>{item.topicName}</Text>
                 </Pressable>
               ))}
             </ScrollView>
@@ -222,7 +238,7 @@ const CreateSchedule = ({ navigation }) => {
         </View>
       </Modal>
 
-   { /*  <View style={styles.view}>
+      <View style={styles.view}>
         <Text style={styles.text}>Select Language</Text>
         <Pressable style={styles.press2} onPress={() => setModal(true)}>
           <Text style={{ fontSize: width * 0.05, color: 'black' }}>{selectedlanguage}</Text>
@@ -234,27 +250,51 @@ const CreateSchedule = ({ navigation }) => {
       </View>
       <Modal animationType="slide" transparent={true} visible={modal}>
         <View style={styles.centeredView}>
-          <View style={[styles.modalView,{height:'30'}]}>
+          <View style={[styles.modalView, { height: '30' }]}>
             <ScrollView>
-            {languages.map((item, index) => (
+              {languages.map((item, index) => (
                 <Pressable
                   key={index}
                   onPress={() => [
                     setModal(false),
-                    setSelectedLanguage(item),
+                    setSelectedLanguage(item.lang),
+                    setSelectedTable(item.t_nam)
                   ]}>
-                  <Text style={styles.modalText}>{item}</Text>
+                  <Text style={styles.modalText}>{item.lang}</Text>
                 </Pressable>
               ))}
-              
             </ScrollView>
           </View>
         </View>
       </Modal>
-      */}
+
       <Pressable style={styles.send} onPress={scheduleReminder}>
         <Text style={styles.sendText}>Set Schedule</Text>
       </Pressable>
+
+      <View style={styles.buttonContainer}>
+        <Pressable
+          style={styles.languageButton}
+          onPress={() => setRepeatType(null)}
+        >
+          <View style={repeatType == null ? styles.selectedLanguageButtonView : styles.languageButtonView}></View>
+          <Text style={styles.languageText}>Once</Text>
+        </Pressable>
+        <Pressable
+          style={styles.languageButton}
+          onPress={() => setRepeatType('week')}
+        >
+          <View style={repeatType == 'week' ? styles.selectedLanguageButtonView : styles.languageButtonView}></View>
+          <Text style={styles.languageText}>Weekly</Text>
+        </Pressable>
+        <Pressable
+          style={styles.languageButton}
+          onPress={() => setRepeatType('month')}
+        >
+          <View style={repeatType == 'month' ? styles.selectedLanguageButtonView : styles.languageButtonView}></View>
+          <Text style={styles.languageText}>Monthly</Text>
+        </Pressable>
+      </View>
       <Pressable style={styles.backButton} onPress={() => navigation.goBack()}>
         <Text style={styles.backButtonText}>Back</Text>
       </Pressable>
@@ -316,13 +356,13 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    width: '70%',
+    width: '90%',
     //backgroundColor: 'red',
     alignSelf: 'center'
   },
   modalView: {
     width: '100%',
-    height: '50%',
+    height: '70%',
     backgroundColor: 'white',
     borderRadius: 20,
     padding: width * 0.1,
@@ -374,5 +414,38 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: 'bold',
   },
+  buttonContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginTop: 20,
+    width: '90%',
+  },
+  languageButton: {
+    padding: 10,
+    borderRadius: 12,
+    width: '30%',
+    alignItems: 'center',
+    //backgroundColor: 'grey',
+    flexDirection: 'row',
+    justifyContent: 'space-evenly',
+    gap: 10
+  },
+  languageText: {
+    fontSize: width * 0.05,
+    color: 'black',
+    fontWeight: '600'
+  },
+  languageButtonView: {
+    width: width * 0.04,
+    height: width * 0.04,
+    backgroundColor: 'lightblue',
+    borderRadius: 30
+  },
+  selectedLanguageButtonView: {
+    width: width * 0.04,
+    height: width * 0.04,
+    backgroundColor: 'blue',
+    borderRadius: 30
+  }
 })
 export default CreateSchedule;
